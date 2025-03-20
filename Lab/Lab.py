@@ -77,15 +77,33 @@ class cardiovascular_disease:
         return plt.show()
     
     def colormap(self, df):
+        plt.figure(figsize=(12, 8)) 
+        sns.heatmap(df.corr(), cmap="coolwarm", annot=True, fmt=".2f", linewidths=0.5)
+        plt.show()
 
-        cor = df.corr()
-        plt.figure(figsize=(12, 8))
-        cmap = sns.cubehelix_palette(start=2, rot=0, dark=0, light=.95, reverse=True, as_cmap=True) 
-        sns.heatmap(cor, cmap="Blues", annot=True)
+    def data_one(self, X, y, dataset_name= "data1"):
+        if dataset_name not in self.best_models:
+            self.best_models[dataset_name] = {}
 
-        plt.title('Correlation Heatmap', fontsize=16)
-        return plt.show()
-    
+        X_train, X_test, X_val, y_train, y_test, y_val = self.train_test_split(X, y)
+
+        scaled_X_train, scaled_X_val, scaled_X_test = self.scaling(X_train, X_val, X_test)
+
+        self.hyper_tuning("logistic_regression", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name)
+        self.hyper_tuning("RandomForest", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name)
+        self.hyper_tuning("KNN", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name)
+        # self.hyper_tuning("ElasticNet", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name, cv=5) # funkar inte så bra för klassifiering
+        self.hyper_tuning("NaiveBayes", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name, cv=5)
+
+        
+        X_train = self.concatenate(scaled_X_train, scaled_X_val) 
+        y_train = self.concatenate(y_train, y_val)
+
+        self.evaluate_on_test(scaled_X_test, y_test, dataset_name=dataset_name)
+
+        y_train = y_train.to_numpy().ravel()
+
+        self.voting_classifier(X_train, y_train, scaled_X_test, y_test, dataset_name=dataset_name)
     def train_test_split(self, X, y):
         
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
@@ -109,8 +127,8 @@ class cardiovascular_disease:
 
         return normal_X_train, normal_X_val, normal_X_test
 
-    def hyper_tuning(self, model_name, X_train, y_train, X_val, y_val, dataset_name="default", cv=3): # Hyperparameter tuning för att hitta bästa modellen
-        
+    def hyper_tuning(self, model_name, X_train, y_train, X_val, y_val, dataset_name="data1", cv=3): # Hyperparameter tuning för att hitta bästa modellen
+
         models = {
             "logistic_regression": (LogisticRegression(), { # Hyperparametrar för Logistic Regression
                 "C": [0.001, 0.1, 1, 3],
@@ -145,7 +163,7 @@ class cardiovascular_disease:
         grid_search.fit(X_train, y_train) # Tränar modellen
 
         best_model = grid_search.best_estimator_
-        self.best_models[model_name] = best_model
+        self.best_models[dataset_name][model_name] = best_model
     
         y_pred = best_model.predict(X_val)
    
@@ -158,10 +176,10 @@ class cardiovascular_disease:
         return pd.concat([X_train, X_val], axis=0)
 
 
-    def evaluate_on_test(self, X_test, y_test):
+    def evaluate_on_test(self, X_test, y_test, dataset_name="data1"):
         # print("\n Evaluating models on test data...\n")
 
-        for model_name, best_model in self.best_models.items():
+        for model_name, best_model in self.best_models[dataset_name].items():
             print(f"Evaluating {model_name}...")
 
             y_pred = best_model.predict(X_test)
@@ -181,134 +199,28 @@ class cardiovascular_disease:
             print(f"* {model_name}: {model.get_params()}\n")
 
 
-    def voting_classifier(self, X_train, y_train, X_test, y_test):
+    def voting_classifier(self, X_train, y_train, X_test, y_test, dataset_name="data1"):
 
         vote_clf = VotingClassifier(estimators=[
-            ('lr', self.best_models["logistic_regression"]), 
-            # ('rfc', self.best_models["RandomForest"]), 
-            # ('knn', self.best_models["KNN"]),
-            # ("nb", self.best_models["NaiveBayes"])
-            ]
-            , voting='hard')
+            ('lr', self.best_models[dataset_name]["logistic_regression"]), 
+            ('rfc', self.best_models[dataset_name]["RandomForest"]), 
+            ('knn', self.best_models[dataset_name]["KNN"]),
+            ("nb", self.best_models[dataset_name]["NaiveBayes"])
+            ], voting='hard')
 
         vote_clf.fit(X_train, y_train)
         y_pred = vote_clf.predict(X_test)
     
-        self.best_models["VotingClassifier"] = vote_clf
+        self.best_models[dataset_name]["VotingClassifier"] = vote_clf
         report = classification_report(y_test, y_pred)
-
+        print(f"Evaluating VotingClassifier...\n")
         print(report)
         cm = confusion_matrix(y_test, y_pred)
-        ConfusionMatrixDisplay(cm, display_labels=["Yes", "No"]).plot()
-   
+        disp = ConfusionMatrixDisplay(cm, display_labels=["Yes", "No"])
+        fig, ax = plt.subplots()
+        disp.plot(ax=ax)
+        ax.set_title(f"VotingClassifier")  
+        plt.show()
 
 
     """-----------------------------------------------------------------------------------"""
-
-
-    # def hyper_tuning(self, model_name, X_train, y_train, X_val, y_val, dataset_name="default", cv=3):
-    #     if dataset_name not in self.best_models:
-    #         self.best_models[dataset_name] = {}  # Skapa en dictionary för datasetet
-
-    #     models = {
-    #         "logistic_regression": (LogisticRegression(), {
-    #             "C": [0.001, 0.1, 1, 3],
-    #             "solver": ["liblinear", "lbfgs"],
-    #             "max_iter": [1000, 2500, 5000, 10000],
-    #             "class_weight": ["balanced"]
-    #         }),
-    #         "RandomForest": (RandomForestClassifier(), {
-    #             "n_estimators": [100, 300],
-    #             "criterion": ["gini", "entropy"],
-    #             "max_depth": [2, 10, 20],
-    #             "min_samples_split": [2, 5, 10],
-    #             "min_samples_leaf": [1, 2, 4]
-    #         }),
-    #         "KNN": (KNeighborsClassifier(), {
-    #             "n_neighbors": range(1, 21, 2),
-    #             "metric": ["euclidean", "manhattan"]
-    #         }),
-    #         "NaiveBayes": (GaussianNB(), {
-    #             "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6, 1e-5]
-    #         })
-    #     }
-
-    #     print(f"Hyperparameter tuning for {model_name} on dataset {dataset_name}...")
-
-    #     model, param_grid = models[model_name]
-    #     grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=cv, scoring="accuracy", verbose=True, n_jobs=-1)
-    #     grid_search.fit(X_train, y_train)
-
-    #     best_model = grid_search.best_estimator_
-    #     self.best_models[dataset_name][model_name] = best_model  # Sparar modellen i rätt dataset
-
-    #     print(f"Best model for {model_name} on {dataset_name}: {grid_search.best_params_}\n")
-
-    #     return best_model
-
-
-
-    # def evaluate_on_test(self, X_test, y_test, dataset_name="default"):
-    #     if dataset_name not in self.best_models:
-    #         print(f"Dataset {dataset_name} saknas i self.best_models!")
-    #         return
-
-    #     print(f"Evaluating models on dataset {dataset_name}...\n")
-        
-    #     for model_name, best_model in self.best_models[dataset_name].items():
-    #         print(f"Evaluating {model_name}...")
-
-    #         y_pred = best_model.predict(X_test)
-    #         accuracy = accuracy_score(y_test, y_pred)
-    #         report = classification_report(y_test, y_pred)
-
-    #         print(f"\nAccuracy for {model_name} on {dataset_name}: {accuracy:.4f}")
-    #         print(f"\nClassification Report:\n{report}")
-    #         print("Unika prediktioner:", np.unique(y_pred, return_counts=True))
-    #         print("-" * 100)
-
-
-    # def voting_classifier(self, X_train, y_train, X_test, y_test, dataset_name="default"):
-    #     if dataset_name not in self.best_models:
-    #         print(f"Dataset {dataset_name} saknas i self.best_models!")
-    #         return
-        
-    #     # Lägg till alla relevanta modeller
-    #     estimators = []
-    #     for name in ["logistic_regression", "KNN", "NaiveBayes"]:
-    #         if name in self.best_models[dataset_name]:
-    #             estimators.append((name, self.best_models[dataset_name][name]))
-    #         else:
-    #             print(f"Varning: {name} saknas i self.best_models[{dataset_name}] och kommer inte användas.")
-
-    #     if len(estimators) < 2:
-    #         print("För få modeller för VotingClassifier!")
-    #         return
-
-    #     vote_clf = VotingClassifier(estimators=estimators, voting='hard')
-    #     vote_clf.fit(X_train, y_train)
-    #     y_pred = vote_clf.predict(X_test)
-
-    #     # Spara VotingClassifier under rätt dataset
-    #     self.best_models[dataset_name]["VotingClassifier"] = vote_clf
-
-    #     report = classification_report(y_test, y_pred)
-    #     print(report)
-
-    #     cm = confusion_matrix(y_test, y_pred)
-    #     ConfusionMatrixDisplay(cm, display_labels=["No", "Yes"]).plot()
-
-    # def print_best_models(self):
-    #     print("\nBästa modeller och deras hyperparametrar per dataset:\n")
-    #     print("-" * 100)
-
-    #     for dataset_name, models in self.best_models.items():
-    #         print(f" Dataset: {dataset_name}")
-            
-    #         for model_name, model in models.items():
-    #             print(f"   * {model_name}:")
-    #             for param, value in model.get_params().items():
-    #                 print(f"       - {param}: {value}")
-    #             print()
-            
-    #         print("-" * 100)
