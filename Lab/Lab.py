@@ -8,8 +8,10 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay, accuracy_score
 from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import VotingClassifier
+
 class cardiovascular_disease:        
         
     def __init__(self, df):
@@ -86,9 +88,6 @@ class cardiovascular_disease:
     def train_test_split(self, X, y):
         
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33)
-
-
-
         X_val, X_test, y_val, y_test = train_test_split(X_test, y_test, test_size=0.5)
 
         return X_train, X_test, X_val, y_train, y_test, y_val
@@ -112,7 +111,7 @@ class cardiovascular_disease:
     def hyper_tuning(self, model_name, X_train, y_train, X_val, y_val, cv=3): # Hyperparameter tuning för att hitta bästa modellen
         models = {
             "logistic_regression": (LogisticRegression(), { # Hyperparametrar för Logistic Regression
-                'C': [0.01, 0.1, 0.5, 1, 3, 10, 100 ],
+                'C': [1, 3, 5, 10, 100 ],
                 'solver': ['liblinear','lbfgs'],
                 'max_iter': [100, 1000, 2500, 5000, 10000]
             }),
@@ -157,15 +156,59 @@ class cardiovascular_disease:
         X_val = pd.DataFrame(scaled_X_val)
         return pd.concat([X_train, X_val], axis=0)
     
-    def voting_classifier(self, X_train, y_train, X_test, y_test):
-        # Skapa en voting classifier
-        voting_clf = VotingClassifier(estimators=[('lr', self.best_models["logistic_regression"]), ('rfc', self.best_models["RandomForest"]), ('knn', self.best_models["KNN"])], voting='hard')
+    # FOrsätt här
 
+    def evaluate_model(self, X_train, y_train, X_test, y_test, best_models):
+        best_models.fit(X_train, y_train)
+        y_pred = best_models.predict(X_test)
 
+        print(classification_report(y_test, y_pred))
+        cm = confusion_matrix(y_test, y_pred)
+        ConfusionMatrixDisplay(cm, display_labels=["Yes", "No"]).plot()
 
+    def evaluate_on_test(self, X_test, y_test):
+        # print("\n Evaluating models on test data...\n")
 
+        for model_name, best_model in self.best_models.items():
+            print(f"Evaluating {model_name}...")
 
+            y_pred = best_model.predict(X_test)
 
+            accuracy = accuracy_score(y_test, y_pred)
+            report = classification_report(y_test, y_pred)
+
+            print(f" Accuracy for {model_name}: {accuracy:.4f}")
+            print(f"\n Classification Report for {model_name}:\n{report}")
+            print("-" * 80)  # Separator mellan modeller 
+
+    def retrain_and_evaluate(self, X_train, y_train, X_test, y_test):
+        print("\n🔄 Retraining models on full training data and evaluating on test data...\n")
+
+        for model_name, best_model in self.best_models.items():
+            print(f"🔄 Retraining {model_name}...")
+
+            # Träna om modellen på HELA träningsdatan
+            best_model.fit(X_train, y_train)
+
+            # Prediktioner på testdatan
+            y_pred = best_model.predict(X_test)
+
+            # Resultat
+            accuracy = accuracy_score(y_test, y_pred)
+            report = classification_report(y_test, y_pred)
+
+            print(f"✅ Accuracy for {model_name}: {accuracy:.4f}")
+            print(f"\n📊 Classification Report for {model_name}:\n{report}")
+            print("-" * 80)
+
+    # def voting_classifier(self, X_train, y_train, X_test, y_test):
+    #     # Skapa en voting classifier
+    #     voting_clf = VotingClassifier(estimators=[
+    #         ('lr', self.best_models["logistic_regression"]), 
+    #         ('rfc', self.best_models["RandomForest"]), 
+    #         ('knn', self.best_models["KNN"]),
+    #         ("elnet", self.best_models["ElasticNet"]),
+    #         ("nb", self.best_models["NaiveBayes"])], voting='hard')
 
 
 
