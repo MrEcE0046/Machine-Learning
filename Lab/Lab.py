@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pylab as plt
 import seaborn as sns
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.linear_model import LogisticRegression, ElasticNet
@@ -87,7 +88,7 @@ class cardiovascular_disease:
     
     def train_test_split(self, X, y):
         
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
         X_val, X_test, y_val, y_test = train_test_split(X_test, y_test, test_size=0.5)
 
         return X_train, X_test, X_val, y_train, y_test, y_val
@@ -108,12 +109,14 @@ class cardiovascular_disease:
 
         return normal_X_train, normal_X_val, normal_X_test
 
-    def hyper_tuning(self, model_name, X_train, y_train, X_val, y_val, cv=3): # Hyperparameter tuning för att hitta bästa modellen
+    def hyper_tuning(self, model_name, X_train, y_train, X_val, y_val, dataset_name="default", cv=3): # Hyperparameter tuning för att hitta bästa modellen
+        
         models = {
             "logistic_regression": (LogisticRegression(), { # Hyperparametrar för Logistic Regression
-                'C': [1, 3, 5, 10, 100 ],
-                'solver': ['liblinear','lbfgs'],
-                'max_iter': [100, 1000, 2500, 5000, 10000]
+                "C": [0.001, 0.1, 1, 3],
+                "solver": ['liblinear','lbfgs'],
+                "max_iter": [1000, 2500, 5000, 10000],
+                "class_weight": ["balanced"]
             }),
             "RandomForest": (RandomForestClassifier(), { # Hyperparametrar för Random Forest
                 'n_estimators': [100, 300],
@@ -136,35 +139,24 @@ class cardiovascular_disease:
             })
         }
 
-
         print(f"Hyperparameter tuning for {model_name}...")
         model, param_grid = models[model_name] # Hämtar modell och parametrar för specifik modell
         grid_search = GridSearchCV(estimator= model, param_grid= param_grid, cv=cv, scoring="accuracy", verbose=True, n_jobs=-1) # cv=3 för att dela upp datan i 3 delar. Prövade med cv=5 men det tog alldeles för lång tid.
         grid_search.fit(X_train, y_train) # Tränar modellen
+
         best_model = grid_search.best_estimator_
         self.best_models[model_name] = best_model
     
-        print(f"Best model for {model_name}: {grid_search.best_params_}\n")
-
         y_pred = best_model.predict(X_val)
-        report = classification_report(y_val, y_pred)
-        print(f"\nClassification report for {model_name}:\n")
-        print(report)
+   
+        accuracy = accuracy_score(y_val, y_pred)
+        print(f"Accuracy for {model_name}: {accuracy:.4f}\n")
         
     def concatenate(self, scaled_X_train, scaled_X_val):
         X_train = pd.DataFrame(scaled_X_train)
         X_val = pd.DataFrame(scaled_X_val)
         return pd.concat([X_train, X_val], axis=0)
-    
-    # FOrsätt här
 
-    def evaluate_model(self, X_train, y_train, X_test, y_test, best_models):
-        best_models.fit(X_train, y_train)
-        y_pred = best_models.predict(X_test)
-
-        print(classification_report(y_test, y_pred))
-        cm = confusion_matrix(y_test, y_pred)
-        ConfusionMatrixDisplay(cm, display_labels=["Yes", "No"]).plot()
 
     def evaluate_on_test(self, X_test, y_test):
         # print("\n Evaluating models on test data...\n")
@@ -177,166 +169,146 @@ class cardiovascular_disease:
             accuracy = accuracy_score(y_test, y_pred)
             report = classification_report(y_test, y_pred)
 
-            print(f" Accuracy for {model_name}: {accuracy:.4f}")
-            print(f"\n Classification Report for {model_name}:\n{report}")
-            print("-" * 80)  # Separator mellan modeller 
+            print(f"\nClassification Report for {model_name}:\n{report}")
+            print("Unika prediktioner:", np.unique(y_pred, return_counts=True))
 
-    def retrain_and_evaluate(self, X_train, y_train, X_test, y_test):
-        print("\n🔄 Retraining models on full training data and evaluating on test data...\n")
-
-        for model_name, best_model in self.best_models.items():
-            print(f"🔄 Retraining {model_name}...")
-
-            # Träna om modellen på HELA träningsdatan
-            best_model.fit(X_train, y_train)
-
-            # Prediktioner på testdatan
-            y_pred = best_model.predict(X_test)
-
-            # Resultat
-            accuracy = accuracy_score(y_test, y_pred)
-            report = classification_report(y_test, y_pred)
-
-            print(f"✅ Accuracy for {model_name}: {accuracy:.4f}")
-            print(f"\n📊 Classification Report for {model_name}:\n{report}")
-            print("-" * 80)
-
-    # def voting_classifier(self, X_train, y_train, X_test, y_test):
-    #     # Skapa en voting classifier
-    #     voting_clf = VotingClassifier(estimators=[
-    #         ('lr', self.best_models["logistic_regression"]), 
-    #         ('rfc', self.best_models["RandomForest"]), 
-    #         ('knn', self.best_models["KNN"]),
-    #         ("elnet", self.best_models["ElasticNet"]),
-    #         ("nb", self.best_models["NaiveBayes"])], voting='hard')
+            print("-" * 100) 
+            
+    def print_best_models(self):
+        print("Bästa modeller och deras hyperparametrar:\n")
+        print("-" * 100)
+        for model_name, model in self.best_models.items():
+            print(f"* {model_name}: {model.get_params()}\n")
 
 
+    def voting_classifier(self, X_train, y_train, X_test, y_test):
 
+        vote_clf = VotingClassifier(estimators=[
+            ('lr', self.best_models["logistic_regression"]), 
+            # ('rfc', self.best_models["RandomForest"]), 
+            # ('knn', self.best_models["KNN"]),
+            # ("nb", self.best_models["NaiveBayes"])
+            ]
+            , voting='hard')
 
+        vote_clf.fit(X_train, y_train)
+        y_pred = vote_clf.predict(X_test)
+    
+        self.best_models["VotingClassifier"] = vote_clf
+        report = classification_report(y_test, y_pred)
 
-
-
-
-
-
-
-
-
-
+        print(report)
+        cm = confusion_matrix(y_test, y_pred)
+        ConfusionMatrixDisplay(cm, display_labels=["Yes", "No"]).plot()
+   
 
 
     """-----------------------------------------------------------------------------------"""
-    def models(self, X_train, y_train):
-
-        lr = LogisticRegression(max_iter=10000)
-        rfc = RandomForestClassifier()
-        kmean = KMeans()
-
-        kmean.fit(X_train, y_train)
-        lr.fit(X_train, y_train)
-        rfc.fit(X_train, y_train)
 
 
-    def model_with_grid_search(self, X_train, y_train, X_test, y_test, model_type):
-        """
-        Funktion för att träna en modell med GridSearchCV.
+    # def hyper_tuning(self, model_name, X_train, y_train, X_val, y_val, dataset_name="default", cv=3):
+    #     if dataset_name not in self.best_models:
+    #         self.best_models[dataset_name] = {}  # Skapa en dictionary för datasetet
+
+    #     models = {
+    #         "logistic_regression": (LogisticRegression(), {
+    #             "C": [0.001, 0.1, 1, 3],
+    #             "solver": ["liblinear", "lbfgs"],
+    #             "max_iter": [1000, 2500, 5000, 10000],
+    #             "class_weight": ["balanced"]
+    #         }),
+    #         "RandomForest": (RandomForestClassifier(), {
+    #             "n_estimators": [100, 300],
+    #             "criterion": ["gini", "entropy"],
+    #             "max_depth": [2, 10, 20],
+    #             "min_samples_split": [2, 5, 10],
+    #             "min_samples_leaf": [1, 2, 4]
+    #         }),
+    #         "KNN": (KNeighborsClassifier(), {
+    #             "n_neighbors": range(1, 21, 2),
+    #             "metric": ["euclidean", "manhattan"]
+    #         }),
+    #         "NaiveBayes": (GaussianNB(), {
+    #             "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6, 1e-5]
+    #         })
+    #     }
+
+    #     print(f"Hyperparameter tuning for {model_name} on dataset {dataset_name}...")
+
+    #     model, param_grid = models[model_name]
+    #     grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=cv, scoring="accuracy", verbose=True, n_jobs=-1)
+    #     grid_search.fit(X_train, y_train)
+
+    #     best_model = grid_search.best_estimator_
+    #     self.best_models[dataset_name][model_name] = best_model  # Sparar modellen i rätt dataset
+
+    #     print(f"Best model for {model_name} on {dataset_name}: {grid_search.best_params_}\n")
+
+    #     return best_model
+
+
+
+    # def evaluate_on_test(self, X_test, y_test, dataset_name="default"):
+    #     if dataset_name not in self.best_models:
+    #         print(f"Dataset {dataset_name} saknas i self.best_models!")
+    #         return
+
+    #     print(f"Evaluating models on dataset {dataset_name}...\n")
         
-        Parameters:
-        - X_train: Träningsdata
-        - y_train: Träningsetiketter
-        - X_test: Testdata
-        - y_test: Testetiketter
-        - model_type: Typ av modell att träna ('logistic_regression', 'knn', 'random_forest')
+    #     for model_name, best_model in self.best_models[dataset_name].items():
+    #         print(f"Evaluating {model_name}...")
+
+    #         y_pred = best_model.predict(X_test)
+    #         accuracy = accuracy_score(y_test, y_pred)
+    #         report = classification_report(y_test, y_pred)
+
+    #         print(f"\nAccuracy for {model_name} on {dataset_name}: {accuracy:.4f}")
+    #         print(f"\nClassification Report:\n{report}")
+    #         print("Unika prediktioner:", np.unique(y_pred, return_counts=True))
+    #         print("-" * 100)
+
+
+    # def voting_classifier(self, X_train, y_train, X_test, y_test, dataset_name="default"):
+    #     if dataset_name not in self.best_models:
+    #         print(f"Dataset {dataset_name} saknas i self.best_models!")
+    #         return
         
-        Returnerar den bästa modellen baserat på GridSearchCV.
-        """
-        
-        # Skapa en pipeline utan skalning om data redan är standardiserade
-        pipe = Pipeline([
-            # Här läggs bara modellen till utan skalning
-        ])
-        
-        # Definiera modellen och hyperparametrarna
-        if model_type == 'logistic_regression':
-            model = LogisticRegression(max_iter=10000)
-            param_grid = {
-                'log_reg__C': [0.01, 0.1, 0.5, 1, 3, 10, 100],
-                'log_reg__solver': ['liblinear', 'lbfgs'],
-                # 'log_reg__max_iter': [100, 1000, 2500, 5000, 10000]
-            }
-            pipe.steps.append(('log_reg', model))
-            param_grid = {f'log_reg__{key}': value for key, value in param_grid.items()}
+    #     # Lägg till alla relevanta modeller
+    #     estimators = []
+    #     for name in ["logistic_regression", "KNN", "NaiveBayes"]:
+    #         if name in self.best_models[dataset_name]:
+    #             estimators.append((name, self.best_models[dataset_name][name]))
+    #         else:
+    #             print(f"Varning: {name} saknas i self.best_models[{dataset_name}] och kommer inte användas.")
+
+    #     if len(estimators) < 2:
+    #         print("För få modeller för VotingClassifier!")
+    #         return
+
+    #     vote_clf = VotingClassifier(estimators=estimators, voting='hard')
+    #     vote_clf.fit(X_train, y_train)
+    #     y_pred = vote_clf.predict(X_test)
+
+    #     # Spara VotingClassifier under rätt dataset
+    #     self.best_models[dataset_name]["VotingClassifier"] = vote_clf
+
+    #     report = classification_report(y_test, y_pred)
+    #     print(report)
+
+    #     cm = confusion_matrix(y_test, y_pred)
+    #     ConfusionMatrixDisplay(cm, display_labels=["No", "Yes"]).plot()
+
+    # def print_best_models(self):
+    #     print("\nBästa modeller och deras hyperparametrar per dataset:\n")
+    #     print("-" * 100)
+
+    #     for dataset_name, models in self.best_models.items():
+    #         print(f" Dataset: {dataset_name}")
             
-        elif model_type == 'knn':
-            model = KNeighborsClassifier()
-            param_grid = {
-                'knn__n_neighbors': [3, 5, 7, 10, 15],
-                'knn__weights': ['uniform', 'distance'],
-                'knn__algorithm': ['auto', 'ball_tree', 'kd_tree', 'brute'],
-                'knn__p': [1, 2]
-            }
-            pipe.steps.append(('knn', model))
-            param_grid = {f'knn__{key}': value for key, value in param_grid.items()}
-        
-        elif model_type == 'random_forest':
-            model = RandomForestClassifier()
-            param_grid = {
-                'rf__n_estimators': [50, 100, 200],
-                'rf__max_depth': [None, 10, 20, 30],
-                'rf__min_samples_split': [2, 5, 10],
-                'rf__min_samples_leaf': [1, 2, 4],
-                'rf__bootstrap': [True, False]
-            }
-            pipe.steps.append(('rf', model))
-            param_grid = {f'rf__{key}': value for key, value in param_grid.items()}
-        
-        else:
-            raise ValueError("Invalid model_type. Must be 'logistic_regression', 'knn', or 'random_forest'.")
-        
-        # Skapa en GridSearchCV-instans
-        grid_search = GridSearchCV(estimator=pipe, param_grid=param_grid, cv=3, verbose=True, n_jobs=-1)
-
-        # Träna modellen med grid search på träningsdata
-        grid_search.fit(X_train, y_train)
-
-        # Utskrift av bästa parametrar och bästa estimator
-        print(f"Best Parameters for {model_type}: ", grid_search.best_params_)
-        print(f"Best Estimator for {model_type}: ", grid_search.best_estimator_)
-
-        # Utvärdera den bästa modellen på testdata
-        test_score = grid_search.score(X_test, y_test)
-        print(f"{model_type.capitalize()} Test set score: {test_score}")
-
-        return grid_search.best_estimator_
-
-    def param_grids(self):
-        lr_grids =[
-        {
-         'C': [0.01, 0.1, 0.5, 1, 3, 10, 100 ],
-         'solver': ['liblinear','lbfgs'],
-         'max_iter': [100, 1000, 2500, 5000, 10000]}
-        ]
-        rfc_grids = [
-        {
-         'n_estimators': [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-         'criterion': ['gini', 'entropy'],
-         'max_depth': [2, 3, 4, 5, 6, 7, 8, 9, 10],
-         'min_samples_split': [2, 3, 4, 5, 6, 7, 8, 9, 10],
-         'min_samples_leaf': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
-        ]
-        knn_grids = [
-            {
-                "n_neighbors": range(1, 21, 2),
-                "metric": ["euclidean", "manhattan"]}
-        ]
-
-#         plt.figure(figsize=(12, 10))
-# sns.heatmap(df.corr(), annot=True, cmap='coolwarm', linewidths=0.5)
-# plt.title('Correlation Heatmap')
-# plt.show()
-
-# plt.figure(figsize=(10, 6))
-# sns.kdeplot(data=df, x='age', hue='cardio', shade=True)
-# plt.title('Age Distribution by Cardiovascular Disease')
-# plt.xlabel('Age (years)')
-# plt.show()
+    #         for model_name, model in models.items():
+    #             print(f"   * {model_name}:")
+    #             for param, value in model.get_params().items():
+    #                 print(f"       - {param}: {value}")
+    #             print()
+            
+    #         print("-" * 100)
