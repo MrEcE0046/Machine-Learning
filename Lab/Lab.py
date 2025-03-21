@@ -8,7 +8,6 @@ from sklearn.linear_model import LogisticRegression, ElasticNet
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay, accuracy_score
 from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import VotingClassifier
@@ -52,28 +51,28 @@ class cardiovascular_disease:
         plt.ylabel("Hjärt-kärlsjukdomar")
         plt.xlabel("BMI")
 
-        plt.subplot(2, 3, 3)
-        df_filtered = self.df[self.df['active'] == 0]
-        feature_plot = df_filtered.groupby(["alco", "smoke", "gender", "active"])["cardio"].mean().reset_index()
-        sns.barplot(data=feature_plot, x="gender", y="cardio")
-        plt.title("Genomsnittlig hjärt-kärlsjukdomar på kategorisk grupp")
-        plt.ylabel("Hjärt-kärlsjukdomar")
-        # Visar genomsnittet av hjärt-kärlsjukdomar på sammansatt data. Man kan tydligt se att det är jämnt fördelat mellan män och kvinnor. 
+        # plt.subplot(2, 3, 3)
+        # df_filtered = self.df[self.df['active'] == 0]
+        # feature_plot = df_filtered.groupby(["alco", "smoke", "gender", "active"])["cardio"].mean().reset_index()
+        # sns.barplot(data=feature_plot, x="gender", y="cardio")
+        # plt.title("Genomsnittlig hjärt-kärlsjukdomar på kategorisk grupp")
+        # plt.ylabel("Hjärt-kärlsjukdomar")
+        # # Visar genomsnittet av hjärt-kärlsjukdomar på sammansatt data. Man kan tydligt se att det är jämnt fördelat mellan män och kvinnor. 
 
-        plt.subplot(2, 3, 4)
+        plt.subplot(2, 3, 3)
         gender = self.df.groupby(["cholesterol"])["cardio"].mean().reset_index()
         sns.barplot(data=gender, x="cholesterol", y="cardio")
         plt.title("Genomsnittliga hjärt-kärlsjukdomar på kolesterålnivåer")
 
-        plt.subplot(2, 3, 5)
+        plt.subplot(2, 3, 4)
         bmi_cardio = self.df.groupby("bp_category")["cardio"].mean().reset_index()
         sns.barplot(data=bmi_cardio, x="bp_category", y="cardio")
         plt.title("Genomsnittlig hjärt-kärlsjukdomar efter blodtryck")
 
         plt.ylabel("Hjärt-kärlsjukdomar")
         plt.xlabel("Blodtryck")
-
         plt.tight_layout()
+
         return plt.show()
     
     def colormap(self, df):
@@ -86,7 +85,6 @@ class cardiovascular_disease:
             self.best_models[dataset_name] = {}
 
         X_train, X_test, X_val, y_train, y_test, y_val = self.train_test_split(X, y)
-
         scaled_X_train, scaled_X_val, scaled_X_test = self.scaling(X_train, X_val, X_test)
 
         self.hyper_tuning("logistic_regression", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name)
@@ -94,7 +92,6 @@ class cardiovascular_disease:
         self.hyper_tuning("KNN", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name)
         # self.hyper_tuning("ElasticNet", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name, cv=5) # funkar inte så bra för klassifiering
         self.hyper_tuning("NaiveBayes", scaled_X_train, y_train, scaled_X_val, y_val, dataset_name=dataset_name, cv=5)
-
         
         X_train = self.concatenate(scaled_X_train, scaled_X_val) 
         y_train = self.concatenate(y_train, y_val)
@@ -104,8 +101,9 @@ class cardiovascular_disease:
         y_train = y_train.to_numpy().ravel()
 
         self.voting_classifier(X_train, y_train, scaled_X_test, y_test, dataset_name=dataset_name)
-    def train_test_split(self, X, y):
         
+        return scaled_X_test, y_test
+    def train_test_split(self, X, y):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
         X_val, X_test, y_val, y_test = train_test_split(X_test, y_test, test_size=0.5)
 
@@ -128,7 +126,7 @@ class cardiovascular_disease:
         return normal_X_train, normal_X_val, normal_X_test
 
     def hyper_tuning(self, model_name, X_train, y_train, X_val, y_val, dataset_name="data1", cv=3): # Hyperparameter tuning för att hitta bästa modellen
-
+        """ Jag fick hjälp av Tobbe i klassen med inledningen av denna funktion """
         models = {
             "logistic_regression": (LogisticRegression(), { # Hyperparametrar för Logistic Regression
                 "C": [0.001, 0.1, 1, 3],
@@ -158,12 +156,12 @@ class cardiovascular_disease:
         }
 
         print(f"Hyperparameter tuning for {model_name}...")
-        model, param_grid = models[model_name] # Hämtar modell och parametrar för specifik modell
+        model, param_grid = models[model_name] 
         grid_search = GridSearchCV(estimator= model, param_grid= param_grid, cv=cv, scoring="accuracy", verbose=True, n_jobs=-1) # cv=3 för att dela upp datan i 3 delar. Prövade med cv=5 men det tog alldeles för lång tid.
-        grid_search.fit(X_train, y_train) # Tränar modellen
+        grid_search.fit(X_train, y_train) 
 
         best_model = grid_search.best_estimator_
-        self.best_models[dataset_name][model_name] = best_model
+        self.best_models[dataset_name][model_name] = best_model # Jag har fått hjälp av GPT för att spara de bästa hyperparametrarna 
     
         y_pred = best_model.predict(X_val)
    
@@ -175,9 +173,7 @@ class cardiovascular_disease:
         X_val = pd.DataFrame(scaled_X_val)
         return pd.concat([X_train, X_val], axis=0)
 
-
     def evaluate_on_test(self, X_test, y_test, dataset_name="data1"):
-        # print("\n Evaluating models on test data...\n")
 
         for model_name, best_model in self.best_models[dataset_name].items():
             print(f"Evaluating {model_name}...")
@@ -197,7 +193,6 @@ class cardiovascular_disease:
         print("-" * 100)
         for model_name, model in self.best_models.items():
             print(f"* {model_name}: {model.get_params()}\n")
-
 
     def voting_classifier(self, X_train, y_train, X_test, y_test, dataset_name="data1"):
 
@@ -222,5 +217,16 @@ class cardiovascular_disease:
         ax.set_title(f"VotingClassifier")  
         plt.show()
 
+    def print_confusion_matrix(self, X_test, y_test, dataset_name=None, model_name=None):
 
-    """-----------------------------------------------------------------------------------"""
+        best_model =self.best_models[dataset_name][model_name]
+
+        y_pred = best_model.predict(X_test)
+        cm = confusion_matrix(y_test, y_pred)
+        report = classification_report(y_test, y_pred)
+        disp = ConfusionMatrixDisplay(cm, display_labels=["Yes", "No"])
+        fig, ax = plt.subplots()
+        disp.plot(ax=ax)
+        ax.set_title(f"Cunfusion Matrix")  
+        plt.show()
+        print(report)
